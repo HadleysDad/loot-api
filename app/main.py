@@ -99,7 +99,7 @@ def drop_by_tag(tag: str, seed: int | None = None):
     rng = get_rng(seed)
     return roll_from_items(items, rng)
 
-@app.post("/drop/by-tag")
+@app.post("/drop/by-tags")
 def drop_by_tags(req: TagDropRequest):
     from drop_engine import extract_items_by_tags, roll_from_items
     from rng import get_rng
@@ -107,6 +107,9 @@ def drop_by_tags(req: TagDropRequest):
     items = extract_items_by_tags(LOOT_TABLE, req.tags)
     if not items:
         raise HTTPException(400, "No items match these tags")
+    
+    rng = get_rng(req.seed)
+    return roll_from_items(items, rng)
 
 @app.post("/simulate/by-tag/{tag}")
 def simulate_by_tag(tag: str, simulations: int = 1000):
