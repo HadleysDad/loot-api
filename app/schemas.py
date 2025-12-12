@@ -9,3 +9,10 @@ class CategoryDropRequest(DropRequest):
 
 class RarityDropRequest(DropRequest):
     rarity: str
+    
+class TagSearchRequest(BaseModel):
+    tags: list[str]
+
+class TagDropRequest(BaseModel):
+    tags: list[str]
+    seed: int | None = None
