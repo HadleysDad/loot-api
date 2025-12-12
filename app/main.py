@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
-from loot_loader import LOOT_TABLE
-from drop_engine import extract_all_items, roll_from_items
-from rng import get_rng
-from schemas import DropRequest, CategoryDropRequest, RarityDropRequest, TagSearchRequest, TagDropRequest
+from app.loot_loader import LOOT_TABLE
+from app.drop_engine import extract_all_items, roll_from_items
+from app.rng import get_rng
+from app.schemas import DropRequest, CategoryDropRequest, RarityDropRequest, TagSearchRequest, TagDropRequest
 
 app = FastAPI(
     title="Loot Table API",
@@ -64,12 +64,12 @@ def drop_legendary(req: DropRequest):
 
 @app.post("/items/list")
 def list_items():
-    from loot_loader import LOOT_TABLE
+    from app.loot_loader import LOOT_TABLE
     return LOOT_TABLE
 
 @app.post("/items/by-tag/{tag}")
 def items_by_tag(tag: str):
-    from drop_engine import extract_items_by_tag
+    from app.drop_engine import extract_items_by_tag
     items = extract_items_by_tag(LOOT_TABLE, tag)
     return {
         "tag": tag,
@@ -79,7 +79,7 @@ def items_by_tag(tag: str):
 
 @app.post("/items/by-tags")
 def items_by_tags(req: TagSearchRequest):
-    from drop_engine import extract_items_by_tags
+    from app.drop_engine import extract_items_by_tags
     items = extract_items_by_tags(LOOT_TABLE, req.tags)
     return {
         "tags": req.tags,
@@ -89,8 +89,8 @@ def items_by_tags(req: TagSearchRequest):
 
 @app.post("/drop/by-tag/{tag}")
 def drop_by_tag(tag: str, seed: int | None = None):
-    from drop_engine import extract_items_by_tag, roll_from_items
-    from rng import get_rng
+    from app.drop_engine import extract_items_by_tag, roll_from_items
+    from app.rng import get_rng
     
     items = extract_items_by_tag(LOOT_TABLE, tag)
     if not items:
@@ -101,8 +101,8 @@ def drop_by_tag(tag: str, seed: int | None = None):
 
 @app.post("/drop/by-tags")
 def drop_by_tags(req: TagDropRequest):
-    from drop_engine import extract_items_by_tags, roll_from_items
-    from rng import get_rng
+    from app.drop_engine import extract_items_by_tags, roll_from_items
+    from app.rng import get_rng
     
     items = extract_items_by_tags(LOOT_TABLE, req.tags)
     if not items:
@@ -113,7 +113,7 @@ def drop_by_tags(req: TagDropRequest):
 
 @app.post("/simulate/by-tag/{tag}")
 def simulate_by_tag(tag: str, simulations: int = 1000):
-    from drop_engine import extract_items_by_tag
+    from app.drop_engine import extract_items_by_tag
     import random
     
     items = extract_items_by_tag(LOOT_TABLE, tag) 
