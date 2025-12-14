@@ -42,3 +42,14 @@ def extract_items_by_tags(loot_table, tags: list[str]):
                     if all(tag in item_tags for tag in tags):
                         results.append(item)
     return results
+
+def simulate_drops(items, rng, simulations: int):
+    results = []
+    
+    for _ in range(simulations):
+        pool = []
+        for item in items:
+            pool.extend([item] * item["drop"]["weight"])
+        results.append(rng.choice(pool))
+        
+    return results

@@ -16,3 +16,8 @@ class TagSearchRequest(BaseModel):
 class TagDropRequest(BaseModel):
     tags: list[str]
     seed: int | None = None
+    
+class SimulationRequest(BaseModel):
+    simulations: int = 1000
+    seed: int | None = None
+    tags: list[str] | None = None
