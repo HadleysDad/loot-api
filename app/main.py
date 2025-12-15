@@ -159,6 +159,7 @@ def simulate_by_tag(tag: str, simulations: int = 1000):
 
 #-----------------SIMULATE-----------------------
 @app.post("/simulate")
+@app.post("/simulate")
 def simulate(req: SimulationRequest):
     from app.drop_engine import (
         extract_all_items,
@@ -169,99 +170,94 @@ def simulate(req: SimulationRequest):
 
     rng = get_rng(req.seed)
 
-    # Choose items
+    # 1. Select items
     if req.tags:
         items = extract_items_by_tags(LOOT_TABLE, req.tags)
         if not items:
             raise HTTPException(400, "No items match provided tags")
-        else:
-            items = extract_all_items(LOOT_TABLE)
-        
-        drops = simulate_drops(items, rng, req.simulations)
-        
-        # ---Analysis---
-        rarity_counts = {}
-        tag_counts = {}
-        item_counts = {}
-        for item in drops:
-            # rarity
-            rarity = item["rarity"]
-            rarity_counts[rarity] = rarity_counts.get(rarity, 0) + 1
-            
-            # tags
-            for tag in item.get("tags", []):
-                tag_counts[tag] = tag_counts.get(tag, 0) + 1
-            
-            # items
-            name = item["name"]
-            item_counts[name] = item_counts.get(name, 0) + 1
-        
-        # Convert to percentages
-        rarity_distribution = {
-            k: round((v / req.simulations) * 100, 2)
-            for k, v in rarity_counts.items()
-        }
-        
-        # Warnings
-        warnings = []
+    else:
+        items = extract_all_items(LOOT_TABLE)
 
-        # --- Rarity checks ---
-        legendary_rate = rarity_distribution.get("Legendary", 0)
-        epic_rate = rarity_distribution.get("Epic", 0)
-        rare_rate = rarity_distribution.get("Rare", 0)
-        
-        if legendary_rate < 0.5:
-            warnings.append("Legendary items drop less than 0.5% of the time.")
-        if legendary_rate > 2.0:
-            warnings.append("Legendary items drop more than 2% of the time.")
-        
-        if epic_rate > 10:
-            warnings.append("Epic items account for more than 10% of all drops.")
-        
-        if rare_rate < 3:
-            warnings.append("Rare items drop less than 3% of the time.")
-        
-        # --- Playstyle balance ---
-        melee_count = tag_counts.get("melee", 0)
-        caster_count = tag_counts.get("caster", 0)
-        
-        if melee_count > 0 and caster_count > 0:
-            ratio = max(melee_count, caster_count) / min(melee_count, caster_count)
-            if ratio >= 3:
-                dominant = "melee" if melee_count > caster_count else "caster"
-                warnings.append(f"{dominant.capitalize()} items appear significantly more often than the opposite playstyle.")
-        
-        # --- Element balance ---
-        for element in ["fire", "frost", "arcane", "holy", "shadow", "poison"]:
-            element_rate = (tag_counts.get(element, 0) / req.simulations) * 100
-            if element_rate > 0 and element_rate < 5:
-                warnings.append(f"{element.capitalize()} items appear in less than 5% of drops.")
-        
-        # --- Item dominance ---
-        for name, count in item_counts.items():
-            percent = (count / req.simulations) * 100
-            if percent > 5:
-                warnings.append(f'Item "{name}" accounts for more than 5% of all drops.')
-        
-        # --- Item starvation ---
-        never_dropped = [
-            name for name, count in item_counts.items() if count == 0
-        ]
-        if never_dropped:
-            warnings.append(f"{len(never_dropped)} items did not drop at all during the simulation.")
-        
-        # --- Category balance ---
-        weapon_rate = (tag_counts.get("weapon", 0) / req.simulations) * 100
-        armor_rate = (tag_counts.get("armor", 0) / req.simulations) * 100
-        
-        if weapon_rate > 70:
-            warnings.append("Weapons account for more than 70% of all drops.")
-        if armor_rate < 20:
-            warnings.append("Armor drops account for less than 20% of all drops.")
-        
-        # --- Simulation quality ---
-        if req.simulations < 5000:
-            warnings.append("Simulation count may be too low for reliable rare/legendary analysis.")
+    # 2. Run simulation
+    drops = simulate_drops(items, rng, req.simulations)
+
+    # 3. Analyze results
+    rarity_counts = {}
+    tag_counts = {}
+    item_counts = {}
+
+    for item in drops:
+        rarity = item["rarity"]
+        rarity_counts[rarity] = rarity_counts.get(rarity, 0) + 1
+
+        for tag in item.get("tags", []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        name = item["name"]
+        item_counts[name] = item_counts.get(name, 0) + 1
+
+    rarity_distribution = {
+        k: round((v / req.simulations) * 100, 2)
+        for k, v in rarity_counts.items()
+    }
+
+    # 4. Generate warnings
+    warnings = []
+
+    legendary_rate = rarity_distribution.get("Legendary", 0)
+    epic_rate = rarity_distribution.get("Epic", 0)
+    rare_rate = rarity_distribution.get("Rare", 0)
+
+    if legendary_rate < 0.5:
+        warnings.append("Legendary items drop less than 0.5% of the time.")
+    if legendary_rate > 2.0:
+        warnings.append("Legendary items drop more than 2% of the time.")
+
+    if epic_rate > 10:
+        warnings.append("Epic items account for more than 10% of all drops.")
+    if rare_rate < 3:
+        warnings.append("Rare items drop less than 3% of the time.")
+
+    melee_count = tag_counts.get("melee", 0)
+    caster_count = tag_counts.get("caster", 0)
+
+    if melee_count and caster_count:
+        ratio = max(melee_count, caster_count) / min(melee_count, caster_count)
+        if ratio >= 3:
+            dominant = "melee" if melee_count > caster_count else "caster"
+            warnings.append(
+                f"{dominant.capitalize()} items appear significantly more often than the opposite playstyle."
+            )
+
+    for element in ["fire", "frost", "arcane", "holy", "shadow", "poison"]:
+        element_rate = (tag_counts.get(element, 0) / req.simulations) * 100
+        if 0 < element_rate < 5:
+            warnings.append(f"{element.capitalize()} items appear in less than 5% of drops.")
+
+    for name, count in item_counts.items():
+        percent = (count / req.simulations) * 100
+        if percent > 5:
+            warnings.append(f'Item "{name}" accounts for more than 5% of all drops.')
+
+    if req.simulations < 5000:
+        warnings.append("Simulation count may be too low for reliable rare/legendary analysis.")
+
+    # 5. Always return
+    return {
+        "simulations": req.simulations,
+        "rarity_distribution": rarity_distribution,
+        "top_items": sorted(
+            item_counts.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:10],
+        "tag_distribution": {
+            k: round((v / req.simulations) * 100, 2)
+            for k, v in tag_counts.items()
+        },
+        "warnings": warnings
+    }
+
 
         
         
