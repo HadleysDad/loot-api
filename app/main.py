@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from app.loot_loader import LOOT_TABLE
 from app.drop_engine import extract_all_items, roll_from_items
 from app.rng import get_rng
-from app.schemas import DropRequest, CategoryDropRequest, RarityDropRequest, TagSearchRequest, TagDropRequest, SimulationRequest
+from app.schemas import DropRequest, CategoryDropRequest, RarityDropRequest, TagSearchRequest, TagDropRequest, SimulationRequest, LuckDropRequest
 
 app = FastAPI(
     title="Loot Table API",
@@ -14,53 +14,6 @@ app = FastAPI(
 @app.get("/health", tags=["Health"])
 def health_check():
     return {"Status": "Ok"}
-
-@app.post("/drop")
-def drop_any(req: DropRequest):
-    rng = get_rng(req.seed)
-    items = extract_all_items(LOOT_TABLE)
-    return roll_from_items(items, rng)
-
-@app.post("/drop/by-category")
-def drop_by_category(req: CategoryDropRequest):
-    category = req.category.lower()
-    if category not in LOOT_TABLE:
-        raise HTTPException(400, "Invalid Category")
-    
-    rng = get_rng(req.seed)
-    
-    items = []
-    for item_type in LOOT_TABLE[category].values():
-        for rarity_items in item_type.values():
-            items.extend(rarity_items)
-            
-    return roll_from_items(items, rng)
-
-@app.post("/drop/by-rarity")
-def drop_by_rarity(req: RarityDropRequest):
-    rarity = req.rarity.lower()
-    rng = get_rng(req.seed)
-    
-    items = []
-    for category in LOOT_TABLE.values():
-        for item_type in category.values():
-            items.extend(item_type.get(rarity, []))
-    
-    if not items:
-        raise HTTPException(400, "No items found for that rarity")
-    
-    return roll_from_items(items, rng)
-
-@app.post("/drop/legendary-only")
-def drop_legendary(req: DropRequest):
-    rng = get_rng(req.seed)
-    
-    items = []
-    for category in LOOT_TABLE.values():
-        for item_type in category.values():
-            items.extend(item_type["legendary"])
-            
-    return roll_from_items(items, rng)
 
 @app.post("/items/list")
 def list_items():
@@ -111,6 +64,86 @@ def items_by_tags(req: TagSearchRequest):
         "count": len(items),
         "items": items
     }
+    
+@app.post("/drop/with-luck")
+def drop_with_luck(req: LuckDropRequest):
+    from app.drop_engine import (
+        extract_all_items,
+        extract_items_by_tags,
+        roll_from_items,
+        apply_luck
+    )
+    from app.rng import get_rng
+    
+    # Clamp luck to a safe range
+    luck = max(0.0, min(req.luck, 1.0))
+    
+    rng = get_rng(req.seed)
+    
+    # Select items
+    if req.tags:
+        items = extract_items_by_tags(LOOT_TABLE, req.tags)
+        if not items:
+            raise HTTPException(400, "No items match provided tags")
+        else:
+            items = extract_all_items(LOOT_TABLE)
+        
+        # Apply luck
+        adjusted_items = apply_luck(items, luck)
+        
+        # Roll
+        return roll_from_items(adjusted_items, rng)
+
+#--------------DROP--------------
+
+@app.post("/drop")
+def drop_any(req: DropRequest):
+    rng = get_rng(req.seed)
+    items = extract_all_items(LOOT_TABLE)
+    return roll_from_items(items, rng)
+
+@app.post("/drop/by-category")
+def drop_by_category(req: CategoryDropRequest):
+    category = req.category.lower()
+    if category not in LOOT_TABLE:
+        raise HTTPException(400, "Invalid Category")
+    
+    rng = get_rng(req.seed)
+    
+    items = []
+    for item_type in LOOT_TABLE[category].values():
+        for rarity_items in item_type.values():
+            items.extend(rarity_items)
+            
+    return roll_from_items(items, rng)
+
+@app.post("/drop/by-rarity")
+def drop_by_rarity(req: RarityDropRequest):
+    rarity = req.rarity.lower()
+    rng = get_rng(req.seed)
+    
+    items = []
+    for category in LOOT_TABLE.values():
+        for item_type in category.values():
+            items.extend(item_type.get(rarity, []))
+    
+    if not items:
+        raise HTTPException(400, "No items found for that rarity")
+    
+    return roll_from_items(items, rng)
+
+@app.post("/drop/legendary-only")
+def drop_legendary(req: DropRequest):
+    rng = get_rng(req.seed)
+    
+    items = []
+    for category in LOOT_TABLE.values():
+        for item_type in category.values():
+            items.extend(item_type["legendary"])
+            
+    return roll_from_items(items, rng)
+
+
 
 @app.post("/drop/by-tag/{tag}")
 def drop_by_tag(tag: str, seed: int | None = None):
@@ -136,29 +169,7 @@ def drop_by_tags(req: TagDropRequest):
     rng = get_rng(req.seed)
     return roll_from_items(items, rng)
 
-@app.post("/simulate/by-tag/{tag}")
-def simulate_by_tag(tag: str, simulations: int = 1000):
-    from app.drop_engine import extract_items_by_tag
-    import random
-    
-    items = extract_items_by_tag(LOOT_TABLE, tag) 
-    if not items:
-        raise HTTPException(400, "No items found for this tag")
-    
-    results = {}
-    for _ in range(simulations):
-        item = random.choice(items)
-        name = item["name"]
-        results[name] = results.get(name, 0) + 1 
-        
-    return {
-        "tag": tag,
-        "simulations": simulations,
-        "results": results
-    }  
-
 #-----------------SIMULATE-----------------------
-@app.post("/simulate")
 @app.post("/simulate")
 def simulate(req: SimulationRequest):
     from app.drop_engine import (
@@ -257,6 +268,27 @@ def simulate(req: SimulationRequest):
         },
         "warnings": warnings
     }
+
+@app.post("/simulate/by-tag/{tag}")
+def simulate_by_tag(tag: str, simulations: int = 1000):
+    from app.drop_engine import extract_items_by_tag
+    import random
+    
+    items = extract_items_by_tag(LOOT_TABLE, tag) 
+    if not items:
+        raise HTTPException(400, "No items found for this tag")
+    
+    results = {}
+    for _ in range(simulations):
+        item = random.choice(items)
+        name = item["name"]
+        results[name] = results.get(name, 0) + 1 
+        
+    return {
+        "tag": tag,
+        "simulations": simulations,
+        "results": results
+    }  
 
 
         

@@ -21,3 +21,8 @@ class SimulationRequest(BaseModel):
     simulations: int = 1000
     seed: int | None = None
     tags: list[str] | None = None
+    
+class LuckDropRequest(BaseModel):
+    luck: float = 0.0 # 0.0 = no luck, 1.0 = strong luck
+    seed: int | None = None
+    tags: list[str] | None = None

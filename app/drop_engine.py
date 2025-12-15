@@ -53,3 +53,36 @@ def simulate_drops(items, rng, simulations: int):
         results.append(rng.choice(pool))
         
     return results
+
+def apply_luck(items, luck: float):
+    """
+    Adjusts drop weights based on luck.
+    Higher rarity benefits more, but nothing is guaranteed.
+    """
+    
+    if luck <= 0:
+        return items
+    
+    rarity_multiplier = {
+        "Common": 1.0,
+        "Uncommon": 1.0 + (luck * 0.25),
+        "Rare": 1.0 + (luck * 0.5),
+        "Epic": 1.0 + (luck * 0.75),
+        "Legendary": 1.0 + luck,
+    }
+    
+    adjusted_items = []
+    
+    for item in items:
+        rarity = item["rarity"]
+        base_weight = item["drop"]["weight"]
+        multiplier = rarity_multiplier.get(rarity, 1.0)
+        
+        adjusted_items.append({
+            **item,
+            "drop": {
+                "weight": max(1, int(base_weight * multiplier))
+            }
+        })
+        
+    return adjusted_items
