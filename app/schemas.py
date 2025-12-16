@@ -26,3 +26,7 @@ class LuckDropRequest(BaseModel):
     luck: float = 0.0 # 0.0 = no luck, 1.0 = strong luck
     seed: int | None = None
     tags: list[str] | None = None
+    
+class LuckSimulateRequest(SimulationRequest):
+    luck: float = 0.0
+    
