@@ -30,3 +30,8 @@ class LuckDropRequest(BaseModel):
 class LuckSimulateRequest(SimulationRequest):
     luck: float = 0.0
     
+class CompareSimulationRequest(BaseModel):
+    simulations: int = 10000
+    luck: float = 0.5
+    seed: int | None = None
+    tags: list[str] | None = None
