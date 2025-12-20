@@ -162,3 +162,4 @@ class CompareSimulationRequest(BaseModel):
         default=None,
         description="Filter comparison pool by tags before running both tests"
     )
+    
