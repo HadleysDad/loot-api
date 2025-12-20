@@ -163,3 +163,6 @@ class CompareSimulationRequest(BaseModel):
         description="Filter comparison pool by tags before running both tests"
     )
     
+class BalanceRequest(BaseModel):
+    simulations: int = 50000
+    seed: int | None = None

@@ -22,6 +22,7 @@ from app.schemas import (
     LuckDropRequest,
     LuckSimulateRequest,
     CompareSimulationRequest,
+    BalanceRequest,
 )
 
 
@@ -541,4 +542,104 @@ def balance_overview():
         "tag_population": dict(sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)),
         
         "rarity_stat_averages": rarity_stat_averages
+    }
+
+#=============================================================================================
+# Balance Suggestions
+#=============================================================================================
+
+@app.post("/balance/suggestions")
+def balance_suggestions(req: BalanceRequest):
+    rng = get_rng(req.seed)
+
+    # Pull items
+    items = extract_all_items(LOOT_TABLE)
+
+    # Run sim
+    drops = simulate_drops(items, rng, req.simulations)
+
+    # Count structures
+    rarity_count = {}
+    tag_count = {}
+    type_count = {}
+
+    for item in drops:
+        rarity = item["rarity"]
+        rarity_count[rarity] = rarity_count.get(rarity, 0) + 1
+
+        for t in item.get("tags", []):
+            tag_count[t] = tag_count.get(t, 0) + 1
+
+        i_type = item["type"].lower()
+        type_count[i_type] = type_count.get(i_type, 0) + 1
+
+    # Convert rarity to %
+    rarity_percent = {
+        r: round((n / req.simulations) * 100, 2)
+        for r, n in rarity_count.items()
+    }
+
+    suggestions = []
+
+    # 1. rarity curve expectations:
+    expected = {
+        "Common": 70,
+        "Uncommon": 20,
+        "Rare": 7,
+        "Epic": 2.5,
+        "Legendary": 0.5
+    }
+
+    for rarity, exp_val in expected.items():
+        current = rarity_percent.get(rarity, 0)
+        delta = round(current - exp_val, 2)
+
+        if abs(delta) > 0.5:
+            if delta > 0:
+                suggestions.append(
+                    f"{rarity} rarity appears too frequently (+{delta}%). "
+                    f"Reduce weight values."
+                )
+            else:
+                suggestions.append(
+                    f"{rarity} rarity appears too rarely ({delta}%). "
+                    f"Increase weight values or add more items."
+                )
+
+    # 2. tag imbalance warnings
+    melee = tag_count.get("melee", 0)
+    caster = tag_count.get("caster", 0)
+
+    if melee > 0 and caster > 0:
+        ratio = max(melee, caster) / min(melee, caster)
+        if ratio >= 4:
+            dominant = "melee" if melee > caster else "caster"
+            suggestions.append(
+                f"{dominant} items appearing disproportionately (ratio {ratio:.1f})."
+            )
+
+    # 3. category starvation
+    for cat, count in type_count.items():
+        pct = (count / req.simulations) * 100
+        if pct < 1:
+            suggestions.append(
+                f"{cat} category extremely rare ({pct:.2f}%). "
+                f"Check weights or add additional gear."
+            )
+
+    # 4. legendary issues
+    leg = rarity_percent.get("Legendary", 0)
+    if leg < 0.25:
+        suggestions.append("Legendary may be dropping too rarely for fun experience.")
+
+    # 5. no suggestions safety
+    if not suggestions:
+        suggestions.append("Loot table appears balanced based on simulation.")
+
+    return {
+        "simulations": req.simulations,
+        "rarity_distribution": rarity_percent,
+        "tag_distribution": tag_count,
+        "type_distribution": type_count,
+        "suggestions": suggestions
     }
