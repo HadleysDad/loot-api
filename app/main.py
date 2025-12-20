@@ -51,7 +51,7 @@ def info():
         "name": "Loot Table API",
         "version": "3.0.0",
         "item_count": len(extract_all_items(LOOT_TABLE)),
-        "categories": list(LOOT_TABLE.key()),
+        "categories": list(LOOT_TABLE.keys()),
         "author": "Your Name",
         "license": "Commercial",
     }
@@ -649,8 +649,13 @@ def balance_suggestions(req: BalanceRequest):
 # Balance Reweight
 #===================================================================
 
-app.get("/balance/reweight")
+@app.post("/balance/reweight")
 def balance_reweight(req: ReweightRequest):
+    if req.target_rarity is None:
+        raise HTTPException(
+            status_code=400,
+            detail="target_rarity is required"
+        )
     if req.simulations > 100_000:
         raise HTTPException(400, "Simulation limit exceeded")
 
