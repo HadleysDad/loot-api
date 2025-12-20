@@ -649,7 +649,7 @@ def balance_suggestions(req: BalanceRequest):
 # Balance Reweight
 #===================================================================
 
-app.post("/balance/reweight")
+app.get("/balance/reweight")
 def balance_reweight(req: ReweightRequest):
     if req.simulations > 100_000:
         raise HTTPException(400, "Simulation limit exceeded")
