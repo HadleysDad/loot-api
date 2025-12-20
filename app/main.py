@@ -23,6 +23,7 @@ from app.schemas import (
     LuckSimulateRequest,
     CompareSimulationRequest,
     BalanceRequest,
+    ReweightRequest,
 )
 
 
@@ -643,3 +644,74 @@ def balance_suggestions(req: BalanceRequest):
         "type_distribution": type_count,
         "suggestions": suggestions
     }
+
+#===================================================================
+# Balance Reweight
+#===================================================================
+
+app.post("/balance/reweight")
+def balance_reweight(req: ReweightRequest):
+    if req.simulations > 100_000:
+        raise HTTPException(400, "Simulation limit exceeded")
+
+    rng = get_rng(req.seed)
+    
+    # Get loot
+    items = extract_all_items(LOOT_TABLE)
+    
+    # Run simulation to see current natural distribution
+    drops = simulate_drops(items, rng, req.simulations)
+    
+    # Count rarity
+    rarity_counts = {}
+    for item in drops:
+        r = item["rarity"]
+        rarity_counts[r] = rarity_counts.get(r, 0) + 1
+    
+    current_dist = {
+        r: round((n / req.simulations) * 100, 3)
+        for r, n in rarity_counts.items()
+    }
+    
+    # Build response structure:
+    # if not target rarity provided, return current
+    imbalance = {}
+    multipliers = {}
+    
+    for rarity, current in current_dist.items():
+        target = req.target_rarity.get(rarity, None)
+
+        if target is None:
+            imbalance[rarity] = {
+                "error": f"Missing target for rarity {rarity}"
+            }
+            continue
+
+        # Percent difference (+/-)
+        delta = round(target - current, 3)
+
+        # Multiplier formula
+        # if target > current → scale up weight
+        # if target < current → scale down weight
+        if current == 0:
+            multiplier = 0
+        else:
+            multiplier = round(target / current, 3)
+
+        imbalance[rarity] = {
+            "current_percent": current,
+            "target_percent": target,
+            "delta": delta,
+        }
+
+        multipliers[rarity] = multiplier
+
+    return {
+        "simulations": req.simulations,
+        "current_distribution": current_dist,
+        "target_distribution": req.target_rarity,
+        "suggested_weight_multiplier": multipliers,
+        "analysis": imbalance
+    }
+        
+        

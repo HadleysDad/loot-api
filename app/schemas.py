@@ -166,3 +166,8 @@ class CompareSimulationRequest(BaseModel):
 class BalanceRequest(BaseModel):
     simulations: int = 50000
     seed: int | None = None
+
+class ReweightRequest(BaseModel):
+    simulations: int = 20000
+    seed: int | None = None
+    target_rarity: dict[str, float]
