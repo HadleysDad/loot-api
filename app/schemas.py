@@ -163,6 +163,13 @@ class CompareSimulationRequest(BaseModel):
         default=None,
         description="Filter comparison pool by tags before running both tests"
     )
+
+class RarityTargets(BaseModel):
+    Common: Optional[float] = None
+    Uncommon: Optional[float] = None
+    Rare: Optional[float] = None
+    Epic: Optional[float] = None
+    Legendary: Optional[float] = None
     
 class BalanceRequest(BaseModel):
     simulations: int = 50000
@@ -171,7 +178,7 @@ class BalanceRequest(BaseModel):
 class ReweightRequest(BaseModel):
     simulations: int = 20000
     seed: int | None = None
-    target_rarity: dict[str, float]
+    target_rarity: RarityTargets
 
 class ExportRequest(BaseModel):
-    multipliers: dict[str, float]
+    multipliers: RarityTargets
