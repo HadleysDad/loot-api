@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from typing import List, Dict, Any
+from copy import deepcopy
+from fastapi.responses import JSONResponse
 
 from app.loot_loader import LOOT_TABLE
 from app.rng import get_rng
@@ -24,6 +26,7 @@ from app.schemas import (
     CompareSimulationRequest,
     BalanceRequest,
     ReweightRequest,
+    ExportRequest
 )
 
 
@@ -651,72 +654,159 @@ def balance_suggestions(req: BalanceRequest):
 
 @app.post("/balance/reweight")
 def balance_reweight(req: ReweightRequest):
-    if req.target_rarity is None:
-        raise HTTPException(
-            status_code=400,
-            detail="target_rarity is required"
-        )
     if req.simulations > 100_000:
         raise HTTPException(400, "Simulation limit exceeded")
 
     rng = get_rng(req.seed)
-    
-    # Get loot
     items = extract_all_items(LOOT_TABLE)
-    
-    # Run simulation to see current natural distribution
+
+    # -------------------------------
+    # Step 1: simulate natural rarity
+    # -------------------------------
+
     drops = simulate_drops(items, rng, req.simulations)
-    
-    # Count rarity
+
     rarity_counts = {}
     for item in drops:
         r = item["rarity"]
         rarity_counts[r] = rarity_counts.get(r, 0) + 1
-    
+
     current_dist = {
-        r: round((n / req.simulations) * 100, 3)
+        r: round((n / req.simulations) * 100, 4)
         for r, n in rarity_counts.items()
     }
-    
-    # Build response structure:
-    # if not target rarity provided, return current
-    imbalance = {}
+
+    # -------------------------------
+    # Step 2: extract target rarity
+    # -------------------------------
+    raw_target = req.target_rarity
+
+    # Missing rarity protection
+    rarity_keys = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+
+    for key in rarity_keys:
+        if key not in raw_target:
+            raw_target[key] = current_dist.get(key, 0)
+
+    # -------------------------------
+    # Step 3: normalize target rarity
+    # -------------------------------
+
+    raw_total = sum(raw_target.values())
+
+    normalized = {
+        r: round((v / raw_total) * 100, 4)
+        for r, v in raw_target.items()
+    }
+
+    # -------------------------------
+    # Step 4: multiplier math
+    # -------------------------------
+
     multipliers = {}
-    
+    delta_analysis = {}
+
     for rarity, current in current_dist.items():
-        target = req.target_rarity.get(rarity, None)
+        t = normalized[rarity]
 
-        if target is None:
-            imbalance[rarity] = {
-                "error": f"Missing target for rarity {rarity}"
-            }
-            continue
+        delta = round(t - current, 4)
 
-        # Percent difference (+/-)
-        delta = round(target - current, 3)
-
-        # Multiplier formula
-        # if target > current → scale up weight
-        # if target < current → scale down weight
         if current == 0:
-            multiplier = 0
+            multipliers[rarity] = 0
         else:
-            multiplier = round(target / current, 3)
+            multipliers[rarity] = round(t / current, 4)
 
-        imbalance[rarity] = {
+        delta_analysis[rarity] = {
             "current_percent": current,
-            "target_percent": target,
+            "normalized_target_percent": t,
             "delta": delta,
+            "recommended_multiplier": multipliers[rarity],
         }
 
-        multipliers[rarity] = multiplier
+    # -------------------------------
+    # Step 5: warnings
+    # -------------------------------
+
+    warnings = []
+
+    if abs(raw_total - 100) > 0.01:
+        warnings.append(
+            f"Target input total was {raw_total}%. Targets were normalized to 100%."
+        )
+
+    recommended_ranges = {
+        "Common": (50, 75),
+        "Uncommon": (15, 35),
+        "Rare": (5, 12),
+        "Epic": (1, 4),
+        "Legendary": (0.1, 1),
+    }
+
+    for rarity, (low, high) in recommended_ranges.items():
+        t = normalized[rarity]
+        if t < low:
+            warnings.append(
+                f"{rarity} target {t}% is below recommended minimum {low}%."
+            )
+        if t > high:
+            warnings.append(
+                f"{rarity} target {t}% exceeds recommended maximum {high}%."
+            )
 
     return {
         "simulations": req.simulations,
         "current_distribution": current_dist,
-        "target_distribution": req.target_rarity,
-        "suggested_weight_multiplier": multipliers,
-        "analysis": imbalance
+        "normalized_target_distribution": normalized,
+        "recommended_multiplier_values": multipliers,
+        "rarity_analysis": delta_analysis,
+        "warnings": warnings
     }
-        
-        
+
+#============================================================================
+# Balance Export
+#============================================================================
+
+@app.post("/balance/export")
+def balance_export(req: ExportRequest):
+    
+    # Step 1: deep copy loot table
+    new_table = deepcopy(LOOT_TABLE)
+    
+    rarity_keys = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+    
+    # Step 2. validate input
+    for rarity, mult in req.multipliers.items():
+        if rarity not in rarity_keys:
+            raise HTTPException(
+                400,
+                f"Invalid rarity multiplier: {rarity}"
+            )
+        if mult <= 0:
+            raise HTTPException(
+                400,
+                "Multiplier must be > 0"
+            )
+    
+    # Step 3. apply multiplier
+    for category in new_table.values():
+        for type_group in category.values():
+            for rarity, items in type_group.items():
+                multiplier = req.multipliers.get(rarity, 1.0)
+                
+                for item in items:
+                    old_weight = item["drop"]["weight"]
+                    new_weight = int(round(old_weight * multiplier))
+                    
+                    # prevent zero removal
+                    if new_weight < 1:
+                        new_weight = 1
+                        
+                    item["drop"]["weight"] = new_weight
+    
+    # Step 4: return downloable file
+    return JSONResponse(
+        content=new_table,
+        headers={
+            "Content-Disposition": "attachment; filename=new_loot_table.json"
+        }
+    )

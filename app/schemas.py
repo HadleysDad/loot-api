@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from enum import Enum
@@ -171,3 +172,6 @@ class ReweightRequest(BaseModel):
     simulations: int = 20000
     seed: int | None = None
     target_rarity: dict[str, float]
+
+class ExportRequest(BaseModel):
+    multipliers: dict[str, float]
