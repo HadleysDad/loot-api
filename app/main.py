@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from typing import List, Dict, Any
+import copy
 from copy import deepcopy
 from fastapi.responses import JSONResponse
 
@@ -825,3 +826,65 @@ def balance_export(req: ExportRequest):
             "Content-Disposition": "attachment; filename=new_loot_table.json"
         }
     )
+
+#==============================================================================
+# Balance Export Simple
+#==============================================================================
+
+@app.post("/balance/export/simple")
+def export_simple(req: ExportRequest):
+    """
+    Returns updated rarity multipliers only.
+    Safe output for beginners and mobile clients.
+    """
+    
+    return {
+        "success": True,
+        "rarity_weights": req.multipliers
+    }
+
+#=============================================================================
+# Balance Export Full
+#=============================================================================
+
+@app.post("/balance/export/full")
+def export_full(req: ExportRequest):
+    """
+    Applies rarity multipliers to loot table and returns a modified json structure.
+    """
+    global LOOT_TABLE
+
+    multipliers = req.multipliers
+
+    # Soft copy to preserve original
+    new_table = copy.deepcopy(LOOT_TABLE)
+    
+    # walk categories -> types -> rarity -> items
+    for category, types in new_table.items():
+        for item_type, rarities in types.items():
+            for rarity, items in rarities.items():
+                
+                # if multiplier missing -> skip
+                if rarity not in multipliers:
+                    continue
+                
+                multiplier = multipliers[rarity]
+                
+                for item in items:
+                    # get old weight
+                    old_weight = item["drop"]["weight"]
+                    
+                    # multiply
+                    new_weight = old_weight * multiplier
+                    
+                    # safety clamp minimum
+                    if new_weight < 1:
+                        new_weight = 1
+                    
+                    # round
+                    item["drop"]["weight"] = round(new_weight)
+    
+    return {
+        "success": True,
+        "updated_loot_table": new_table
+    }
