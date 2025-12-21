@@ -221,3 +221,12 @@ class ExportRequest(BaseModel):
     }
 
 
+class ImportTestRequest(BaseModel):
+    loot_table: dict = Field(
+        description="Custom loot table JSON to validate. Use the same structure as /schemas output.",
+        
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Optional label for this imported loot table (e.g. 'Build_27_Beta_Loot')."
+    )

@@ -27,7 +27,8 @@ from app.schemas import (
     CompareSimulationRequest,
     BalanceRequest,
     ReweightRequest,
-    ExportRequest
+    ExportRequest,
+    ImportTestRequest,
 )
 
 
@@ -62,7 +63,7 @@ def info():
         "version": "3.0.0",
         "item_count": len(extract_all_items(LOOT_TABLE)),
         "categories": list(LOOT_TABLE.keys()),
-        "author": "Your Name",
+        "author": "Sam Grabar",
         "license": "Commercial",
     }
 
@@ -670,6 +671,200 @@ def balance_overview():
         "tag_population": dict(sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)),
         
         "rarity_stat_averages": rarity_stat_averages
+    }
+
+#============================================================================================
+# Balance Test-Import: validate a custom loot tavle JSON
+#============================================================================================
+
+@app.post(
+    "/balance/test-import",
+    tags=["Balance Tools"],
+    summary="Validate a custom loot table JSON",
+    description=(
+        "Upload your own loot table JSON (same structure as /schema) and get:\n"
+        "- structural validation (required fields, types, weights)\n"
+        "- rarity / category summaries\n"
+        "- tag population\n"
+        "- average stats per rarity\n"
+        "This endpoint does NOT modify the built-in loot table."
+    ),
+    response_model=dict,
+)
+def balance_test_import(req: ImportTestRequest):
+    
+    loot_table = req.loot_table
+    name = req.name or "imported_loot_table"
+    
+    errors: List[str] = []
+    warnings: List[str] = []
+    
+    total_items = 0
+    rarity_counts: Dict[str, int] = {}
+    category_counts: Dict[str, int] = {}
+    item_type_counts: Dict[str, int] = {}
+    tag_counts: Dict[str, int] = {}
+
+    stat_totals_by_rarity: Dict[str, Dict[str, float]] = {}
+    stat_counts_by_rarity: Dict[str, int] = {}
+    
+    # 1. Top-level structure check
+    if not isinstance(loot_table, dict):
+        errors.append("Top-level 'loot_table' must be a JSON ovject (dict of categories).")
+        return {
+            "name": name,
+            "valid": False,
+            "errors": errors,
+            "warnings": warnings,
+        }
+    
+    # 2. Walk structure: category -> item_type -> rarity -> [items]
+    for category_name, category_val in loot_table.items():
+        if not isinstance(category_val, dict):
+            errors.append(
+                f"Category '{category_name}' should map to an object of item types (dict)."
+            )
+            continue
+        
+        category_counts.setdefault(category_name, 0)
+        
+        for item_type_name, type_val in category_val.items():
+            if not isinstance(type_val, dict):
+                errors.append(
+                    f"In category '{category_name}', item type '{item_type_name}'"
+                    f"should map to an object of rarities (dict)."
+                )
+                continue
+            
+            item_type_counts.setdefault(item_type_name, 0)
+            
+            for rarity_name, items in type_val.items():
+                if not isinstance(items, list):
+                    errors.append(
+                        f"In {category_name}/{item_type_name}, rarity '{rarity_name}' "
+                        f"should be a list of items."
+                    )
+                    continue
+                
+                for idx, item in enumerate(items):
+                    path = f"{category_name}/{item_type_name}/{rarity_name}[{idx}]"
+                    
+                    if not isinstance(item, dict):
+                        errors.append(f"Item at {path} must be an ovject.")
+                        continue
+                    
+                    # Required fields
+                    required_fields = ["name", "rarity", "types", "drop"]
+                    missing = [f for f in required_fields if f not in item]
+                    if missing:
+                        errors.append(
+                            f"Item at {path} is missing required fields: {', '.join(missing)}"
+                        )
+                        continue
+                    
+                    # name
+                    if not isinstance(item["name"], str):
+                        errors.append(f"Item at {path} has non-string 'name'.")
+                        continue
+                    
+                    # rarity value
+                    rarity_value = item["rarity"]
+                    if not isinstance(rarity_value, str):
+                        errors.append(f"Item '{item['name']}' at {path} has non-string 'rarity'.")
+                        continue
+                    
+                    # drop block & weight
+                    drop_block = item["drop"]
+                    if not isinstance(drop_block, dict):
+                        errors.append(
+                            f"Item '{item[name]}' at {path} has 'drop' that is not an object."
+                        )
+                        continue
+                    
+                    weight = drop_block.get("weight")
+                    if not isinstance(weight, (int, float)):
+                        errors.append(
+                            f"Item '{item['name']}' at {path} has invalid drop.weight "
+                            f"(must be a number)."
+                        )
+                        continue
+                    if weight < 0:
+                        errors.append(
+                            f"Item '{item['name']}' at {path} has non-positive "
+                            f"drop.weight ({weight})."
+                        )
+                        continue
+                    
+                    # If we reach here, the item is strucurally valid
+                    total_items += 1
+                    rarity_counts[rarity_value] = rarity_counts.get(rarity_value, 0) + 1
+                    category_counts[category_name] += 1
+                    item_type_counts[item_type_name] += 1
+                    
+                    # Tags
+                    tags_list = item.get("tags", [])
+                    if isinstance(tags_list, list):
+                        for t in tags_list:
+                            if isinstance(t, str):
+                                tag_counts[t] = tag_counts.get(t, 0) + 1
+                    
+                    # Stats
+                    stats_block = item.get("stats", {})
+                    if isinstance(stats_block, dict):
+                        stat_totals_by_rarity.setdefault(rarity_value, {})
+                        stat_counts_by_rarity[rarity_value] = (
+                            stat_counts_by_rarity.get(rarity_value, 0) + 1
+                        )
+                        for stat_name, value in stats_block.items():
+                            if isinstance(value, (int, float)):
+                                stat_totals_by_rarity[rarity_value][stat_name] = (
+                                    stat_totals_by_rarity[rarity_value].get(stat_name, 0) + value
+                                )
+    
+    # 3. Compute rarity percentages
+    rarity_percentages: Dict[str, float] = {}
+    if total_items > 0:
+        for r, count in rarity_counts.items():
+            rarity_percentages[r] = round((count / total_items) * 100, 2)
+        else:
+            warnings.append("No valid items found in imported loot table.")
+    
+    # 4. Compute stat averages per rarity
+    rarity_stat_averages: Dict[str, Dict[str, float]] = {}
+    for rarity_value, totals in stat_totals_by_rarity.items():
+        count_items = stat_counts_by_rarity.get(rarity_value, 0)
+        if count_items > 0:
+            rarity_stat_averages[rarity_value] = {
+                stat_name: round(total / count_items, 2)
+                for stat_name, total in totals.items()
+            }
+
+    # 5. Generic warnings about typical rarities (non-fatal)
+    typical_rarities = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+    for r in typical_rarities:
+        if r not in rarity_counts:
+            warnings.append(
+                f"Rarity '{r}' was not found. If you use custom tiers, you can ignore this."
+            )
+
+    valid = len(errors) == 0
+
+    return {
+        "name": name,
+        "valid": valid,
+        "errors": errors,
+        "warnings": warnings,
+        "summary": {
+            "total_items": total_items,
+            "rarity_counts": rarity_counts,
+            "rarity_percentages": rarity_percentages,
+            "category_counts": category_counts,
+            "item_type_counts": item_type_counts,
+        },
+        "tag_population": dict(
+            sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+        ),
+        "rarity_stat_averages": rarity_stat_averages,
     }
 
 #=============================================================================================
