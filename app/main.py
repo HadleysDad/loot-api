@@ -49,7 +49,13 @@ def health_check():
 # ============================================================
 # METADATA ENDPOINTS
 # ============================================================
-@app.get("/info", response_model=dict)
+@app.get(
+    "/info", 
+    tags=["Metadata"], 
+    summary="API Info + Systme Metadata",
+    description="Returns API build version, author, items counts, and structure overview", 
+    response_model=dict
+)
 def info():
     return {
         "name": "Loot Table API",
@@ -59,6 +65,66 @@ def info():
         "author": "Your Name",
         "license": "Commercial",
     }
+
+@app.get(
+    "/schema",
+    tags=["Metadata"],
+    summary="Returns full loot table JSON",
+    description="Useful for debugging, browsing items, or exporting your starting schema.", 
+    response_model=dict
+)
+def schema():
+    return LOOT_TABLE
+
+
+@app.get(
+    "/tags",
+    tags=["Metadata"],
+    summary="Retrieve every tag used across loot table",
+    description="Used for filtering simulations, dropsm abd crafting analysis.", 
+    response_model=List[str]
+)
+def list_tags():
+    tags = set()
+    for category in LOOT_TABLE.values():
+        for item_type in category.values():
+            for rarity_items in item_type.values():
+                for item in rarity_items:
+                    tags.update(item.get("tags", []))
+    return sorted(tags)
+
+
+@app.get(
+    "/stats",
+    tags=["Metadata"],
+    summary="List every stat name used by items",
+    description="Strength / Agility / Luck / AttackSpeed / etc.", 
+    response_model=List[str]
+)
+def list_stats():
+    stats = set()
+    for category in LOOT_TABLE.values():
+        for item_type in category.values():
+            for rarity_items in item_type.values():
+                for item in rarity_items:
+                    stats.update(item.get("stats", {}).keys())
+    return sorted(stats)
+
+
+@app.get(
+    "/categories",
+    tags=["Metadata"],
+    summary="List every category used by items.",
+    description="All searchable categories used in the loot table.", 
+    response_model=List[str]
+)
+def list_categories():
+    return list(LOOT_TABLE.keys())
+
+
+#============================================================
+# Help
+#============================================================
 
 @app.get("/rarity/schema", tags=["Help"])
 def rarity_schema():
@@ -70,43 +136,17 @@ def rarity_schema():
         "Legendary": "float % value"
     }
 
-
-@app.get("/tags", response_model=List[str])
-def list_tags():
-    tags = set()
-    for category in LOOT_TABLE.values():
-        for item_type in category.values():
-            for rarity_items in item_type.values():
-                for item in rarity_items:
-                    tags.update(item.get("tags", []))
-    return sorted(tags)
-
-
-@app.get("/stats", response_model=List[str])
-def list_stats():
-    stats = set()
-    for category in LOOT_TABLE.values():
-        for item_type in category.values():
-            for rarity_items in item_type.values():
-                for item in rarity_items:
-                    stats.update(item.get("stats", {}).keys())
-    return sorted(stats)
-
-
-@app.get("/categories", response_model=List[str])
-def list_categories():
-    return list(LOOT_TABLE.keys())
-
-@app.get("/schema", response_model=dict)
-def schema():
-    return LOOT_TABLE
-
-
 # ============================================================
 # ITEM SEARCH
 # ============================================================
 
-@app.post("/items/by-tag/{tag}", response_model=dict)
+@app.post(
+    "/items/by-tag/{tag}",
+    tags=["Item Search"],
+    summary="Return all item containing a specific tag",
+    description="Example tags: fire | frost | sword | healing | ring | rare",
+    response_model=dict
+)
 def items_by_tag(tag: str):
     items = extract_items_by_tag(LOOT_TABLE, tag)
     return {
@@ -116,7 +156,13 @@ def items_by_tag(tag: str):
     }
 
 
-@app.post("/items/by-tags", response_model=dict)
+@app.post(
+    "/items/by-tags",
+    tags=["Item Search"],
+    summary="Search using multiple tags",
+    description="Returns only items that contain ALL requested tags.",
+    response_model=dict
+)
 def items_by_tags(req: TagSearchRequest):
     items = extract_items_by_tags(LOOT_TABLE, req.tags)
     return {
@@ -130,14 +176,26 @@ def items_by_tags(req: TagSearchRequest):
 # SINGLE DROPS
 # ============================================================
 
-@app.post("/drop", response_model=dict)
+@app.post(
+    "/drop",
+    tags=["Drops"],
+    summary="Random drop from entire loot pool",
+    description="Ignores rarity and category. Uses weighted probability table.", 
+    response_model=dict
+)
 def drop_any(req: DropRequest):
     rng = get_rng(req.seed)
     items = extract_all_items(LOOT_TABLE)
     return {"drop": roll_from_items(items, rng)}
 
 
-@app.post("/drop/by-category", response_model=dict)
+@app.post(
+    "/drop/by-category",
+     tags=["Drops"],
+    summary="Drop from specific category",
+    description="Armor-only drops, Weapon-only drops, Jewellery, Materials, etc.", 
+    response_model=dict
+)
 def drop_by_category(req: CategoryDropRequest):
     category = req.category.lower()
 
@@ -154,7 +212,13 @@ def drop_by_category(req: CategoryDropRequest):
     return {"category": category, "drop": roll_from_items(items, rng)}
 
 
-@app.post("/drop/by-rarity", response_model=dict)
+@app.post(
+    "/drop/by-rarity",
+     tags=["Drops"],
+    summary="Drop from specific rarity",
+    description="Common / Uncommon / Rare / Epic / Legendary restricted RNG.",
+    response_model=dict
+)
 def drop_by_rarity(req: RarityDropRequest):
     rarity = req.rarity.value.lower()
     rng = get_rng(req.seed)
@@ -170,7 +234,13 @@ def drop_by_rarity(req: RarityDropRequest):
     return {"rarity": rarity, "drop": roll_from_items(items, rng)}
 
 
-@app.post("/drop/by-tag/{tag}", response_model=dict)
+@app.post(
+    "/drop/by-tag/{tag}",
+    tags=["Drops"],
+    summary="Drop single item matching tag",
+    description="Useful for ability or class–specific loot rolls.", 
+    response_model=dict
+)
 def drop_by_tag(tag: str, seed: int | None = None):
     items = extract_items_by_tag(LOOT_TABLE, tag)
 
@@ -181,7 +251,13 @@ def drop_by_tag(tag: str, seed: int | None = None):
     return {"tag": tag, "drop": roll_from_items(items, rng)}
 
 
-@app.post("/drop/by-tags", response_model=dict)
+@app.post(
+    "/drop/by-tags",
+    tags=["Drops"],
+    summary="Drop using multi-tag filter",
+    description="Returns loot that matches all tags simultaneously.", 
+    response_model=dict
+)
 def drop_by_tags(req: TagDropRequest):
     items = extract_items_by_tags(LOOT_TABLE, req.tags)
 
@@ -192,7 +268,13 @@ def drop_by_tags(req: TagDropRequest):
     return {"tags": req.tags, "drop": roll_from_items(items, rng)}
 
 
-@app.post("/drop/with-luck", response_model=dict)
+@app.post(
+    "/drop/with-luck",
+     tags=["Drops"],
+    summary="Drop roll with probability biasing",
+    description="luck=1.0 dramatically improves rare/legendary probability.",
+    response_model=dict
+)
 def drop_with_luck(req: LuckDropRequest):
     luck = max(0.0, min(req.luck, 1.0))
     rng = get_rng(req.seed)
@@ -217,7 +299,13 @@ def drop_with_luck(req: LuckDropRequest):
 # TRY IT NOW: LEGENDARY PREVIEW
 #=============================================================
 
-@app.get("/legenday-preview", response_model=dict)
+@app.get(
+    "/legenday-preview",
+    tags=["Debug / Preview"],
+    summary="Show a single legendary result",
+    description="Used as a live RNG validator inside docs.", 
+    response_model=dict
+)
 def legendary_preview():
     items = []
     for category in LOOT_TABLE.values():
@@ -231,7 +319,13 @@ def legendary_preview():
 # SIMULATION ENGINE (STANDARD)
 # ============================================================
 
-@app.post("/simulate", response_model=dict)
+@app.post(
+    "/simulate",
+    tags=["Simulation"],
+    summary="Run probability simulation",
+    description="Returns rarity distribution statistics and top item results.", 
+    response_model=dict
+)
 def simulate(req: SimulationRequest):
 
     if req.simulations > 100_000:
@@ -315,7 +409,13 @@ def simulate(req: SimulationRequest):
 # SIMULATION ENGINE (LUCK)
 # ============================================================
 
-@app.post("/simulate/with-luck", response_model=dict)
+@app.post(
+    "/simulate/with-luck",
+     tags=["Simulation"],
+    summary="Run RNG simulation with luck bias",
+    description="Shows how loot shifts under luck biasing conditions.",
+    response_model=dict
+)
 def simulate_with_luck(req: LuckSimulateRequest):
 
     if req.simulations > 100_000:
@@ -397,7 +497,13 @@ def simulate_with_luck(req: LuckSimulateRequest):
 # SIMULATION COMPARISON
 # ============================================================
 
-@app.post("/simulate/compare", response_model=dict)
+@app.post(
+    "/simulate/compare",
+    tags=["Simulation"],
+    summary="Compare standard vs luck simulation",
+    description="Used by devs to evaluate impact on balance before shipping change.", 
+    response_model=dict
+)
 def simulate_compare(req: CompareSimulationRequest):
 
     if req.simulations > 100_000:
@@ -452,7 +558,13 @@ def simulate_compare(req: CompareSimulationRequest):
 # BALANCE/OVERVIEW
 #=============================================================
 
-@app.get("/balance/overview", response_model=dict)
+@app.get(
+    "/balance/overview",
+    tags=["Balance Tools"],
+    summary="Full loot table balance analysis",
+    description="Category %, rarity %, tag %, and stat curve averages included.", 
+    response_model=dict
+)
 def balance_overview():
 
     total_items = 0
@@ -564,7 +676,12 @@ def balance_overview():
 # Balance Suggestions
 #=============================================================================================
 
-@app.post("/balance/suggestions")
+@app.post(
+    "/balance/suggestions",
+    tags=["Balance Tools"],
+    summary="Loot balancing recommendation engine",
+    description="AI logic provides suggestions based on rarity, tags, type diversity.",
+)
 def balance_suggestions(req: BalanceRequest):
     rng = get_rng(req.seed)
 
@@ -782,7 +899,12 @@ def balance_reweight(req: ReweightRequest):
 # Balance Export
 #============================================================================
 
-@app.post("/balance/export")
+@app.post(
+    "/balance/export",
+    tags=["Export Tools"],
+    summary="Modify table weights + export",
+    description="Returns a downloadable loot table JSON with adjusted weights."
+)
 def balance_export(req: ExportRequest):
     
     # Step 1: deep copy loot table
@@ -831,7 +953,12 @@ def balance_export(req: ExportRequest):
 # Balance Export Simple
 #==============================================================================
 
-@app.post("/balance/export/simple")
+@app.post(
+    "/balance/export/simple",
+    tags=["Export Tools"],
+    summary="Return rarity multipliers only",
+    description="Useful for lightweight client integrations & mobile applications."
+)
 def export_simple(req: ExportRequest):
     """
     Returns updated rarity multipliers only.
@@ -847,7 +974,12 @@ def export_simple(req: ExportRequest):
 # Balance Export Full
 #=============================================================================
 
-@app.post("/balance/export/full")
+@app.post(
+    "/balance/export/full",
+     tags=["Export Tools"],
+    summary="Return fully rewritten loot table",
+    description="Produces a complete new loot table instance reflecting rarity weight changes."
+)
 def export_full(req: ExportRequest):
     """
     Applies rarity multipliers to loot table and returns a modified json structure.
