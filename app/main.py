@@ -59,6 +59,17 @@ def info():
         "license": "Commercial",
     }
 
+@app.get("/rarity/schema", tags=["Help"])
+def rarity_schema():
+    return {
+        "Common": "float % value",
+        "Uncommon": "float % value",
+        "Rare": "float % value",
+        "Epic": "float % value",
+        "Legendary": "float % value"
+    }
+
+
 @app.get("/tags", response_model=List[str])
 def list_tags():
     tags = set()
@@ -652,7 +663,11 @@ def balance_suggestions(req: BalanceRequest):
 # Balance Reweight
 #===================================================================
 
-@app.post("/balance/reweight")
+@app.post("/balance/reweight",
+          tags=["Balance Tools"],
+          summary="Analyze imbalance + calculate weight multipliers",
+          description="Provide rarity percentage targets. Total may be > or < 100, tool normalizes internally.")
+
 def balance_reweight(req: ReweightRequest):
     if req.simulations > 100_000:
         raise HTTPException(400, "Simulation limit exceeded")

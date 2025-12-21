@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List
+from typing import Optional, List, Dict
 from enum import Enum
 
 # -----------------------------
@@ -177,8 +177,47 @@ class BalanceRequest(BaseModel):
 
 class ReweightRequest(BaseModel):
     simulations: int = 20000
-    seed: int | None = None
-    target_rarity: RarityTargets
+    seed: Optional[int] = None
+    target_rarity: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Target drop % by rarity. Total should be close to 100."
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "simulations": 20000,
+                "seed": 1,
+                "target_rarity": {
+                    "Common": 50,
+                    "Uncommon": 27,
+                    "Rare": 15,
+                    "Epic": 6,
+                    "Legendary": 2
+                }
+            }
+        }
+    }
+
 
 class ExportRequest(BaseModel):
-    multipliers: RarityTargets
+    multipliers: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Weight multipliers to apply to your loot table items."
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "multipliers": {
+                    "Common": 0.82,
+                    "Uncommon": 1.20,
+                    "Rare": 1.30,
+                    "Epic": 1.50,
+                    "Legendary": 2.10
+                }
+            }
+        }
+    }
+
+
