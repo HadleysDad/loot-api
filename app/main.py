@@ -679,6 +679,7 @@ def balance_overview():
 
 @app.post(
     "/balance/test-import",
+    response_model=dict,
     tags=["Balance Tools"],
     summary="Validate a custom loot table JSON",
     description=(
@@ -689,7 +690,33 @@ def balance_overview():
         "- average stats per rarity\n"
         "This endpoint does NOT modify the built-in loot table."
     ),
-    response_model=dict,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "name": "UnityLoot_v1",
+                        "loot_table": {
+                            "Weapons": {
+                                "sword_1h": {
+                                    "Common": [
+                                        {
+                                            "name": "Rusty Sword",
+                                            "rarity": "Common",
+                                            "type": "weapon_sword_1h",
+                                            "tags": ["melee", "physical"],
+                                            "stats": {"attack": 5},
+                                            "drop": {"weight": 100}
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 )
 def balance_test_import(req: ImportTestRequest):
     
@@ -1215,3 +1242,4 @@ def export_full(req: ExportRequest):
         "success": True,
         "updated_loot_table": new_table
     }
+    

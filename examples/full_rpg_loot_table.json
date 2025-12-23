@@ -1,0 +1,10 @@
+{
+    "Weapons": {
+        "name": "Shadow Bow",
+        "rarity": "Rare",
+        "tags": ["ranged", "shadow"],
+        "stats": {"attack": 19, "crit": 3},
+        "drop": {"weight": 12}
+
+    }
+}

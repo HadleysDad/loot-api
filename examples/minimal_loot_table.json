@@ -1,0 +1,14 @@
+{
+    "Weapons": {
+        "Sword_1H": {
+            "Common": [
+                {
+                    "name": "Rusty Sword",
+                    "rarity": "Common",
+                    "type": "weapon_sword_1h",
+                    "drop": { "weight": 100 }
+                }
+            ]
+        }
+    }
+}

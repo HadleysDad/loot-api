@@ -1,0 +1,11 @@
+{
+    "Weapons": {
+        "Sword_1H": {
+            "Common": [
+                {
+                    "name": "Corrupt Item"
+                }
+            ]
+        }
+    }
+}
