@@ -224,25 +224,24 @@ class ExportRequest(BaseModel):
 class ImportTestRequest(BaseModel):
     loot_table: dict = Field(
         ...,
-        description="Custom loot table JSON to validate. Use the same structure as the main API loot table."
+        description="Custom loot table JSON to validate. Must follow schema contract."
     )
-
     name: Optional[str] = Field(
-        default="Imported_Table",
-        description="Optional label for the table being tested."
+        default="Imported Table",
+        description="Label for your imported dataset."
     )
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "name": "Imported_Table",
+                    "name": "MyUnityLoot_v1",
                     "loot_table": {
                         "Weapons": {
                             "Sword_1H": {
                                 "Common": [
                                     {
-                                        "name": "Rusty Sword",
+                                        "name": "Copper Sword",
                                         "rarity": "Common",
                                         "type": "weapon_sword_1h",
                                         "tags": ["melee", "physical"],
@@ -257,3 +256,4 @@ class ImportTestRequest(BaseModel):
             ]
         }
     }
+

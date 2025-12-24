@@ -78,7 +78,49 @@ Pydantic
 Uvicorn
 
 JSON-driven configuration
+-----------------------------------------------------------------
+Loot Table Schema Contract (v1)
 
+Top-level is a JSON object:
+
+Keys = categories (string), e.g. "Weapons", "Armor"
+
+Values = category objects
+
+Category object
+
+Keys = item types (string), e.g. "Sword_1H", "Boots"
+
+Values = rarity objects
+
+Rarity object
+
+Keys = rarities (string): Common, Uncommon, Rare, Epic, Legendary
+
+Values = list of item objects
+
+Item object required fields
+
+name (string)
+
+rarity (string) must match the rarity key it is stored under
+
+type (string) identifier, e.g. "weapon_sword_1h"
+
+drop (object) must include:
+
+weight (int) must be >= 1
+
+Item object optional fields
+
+tags (list of strings)
+
+stats (object of numeric values)
+
+passive (object) for legendary-only effects (optional)
+
+This contract is what /balance/test-import enforces.
+-----------------------------------------------------------------
 📦 Installation
 1. Clone the repository
 git clone https://github.com/your-username/loot-api.git
