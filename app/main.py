@@ -4,9 +4,17 @@ import copy
 from copy import deepcopy
 from fastapi.responses import JSONResponse
 
+from app.autocorrect_engine import (
+    generate_autocorrect_preview, 
+    build_autocorrect_diff, 
+    get_profile_capabilities, 
+    apply_autocorrect,
+)
+
 from app.import_validator import validate_loot_table
 from app.loot_loader import LOOT_TABLE
 from app.rng import get_rng
+
 from app.drop_engine import (
     extract_all_items,
     extract_items_by_tag,
@@ -30,6 +38,7 @@ from app.schemas import (
     ReweightRequest,
     ExportRequest,
     ImportTestRequest,
+    ExportcorrectRequest,
 )
 
 
@@ -678,29 +687,78 @@ def balance_overview():
 # Balance Test-Import: validate a custom loot tavle JSON
 #============================================================================================
 
-from app.import_validator import validate_loot_table
-
 @app.post(
     "/balance/test-import",
     response_model=dict,
     tags=["Balance Tools"],
     summary="Validate a custom loot table JSON",
     description=(
-        "Upload your own loot table JSON and receive a full validation report:\n"
-        "- Structural errors and warnings\n"
-        "- Rarity / category summaries\n"
-        "- Tag population\n"
-        "- Compatibility flags for balance tools\n\n"
-        "This endpoint does NOT modify the built-in loot table."
-    )
+        "Upload your own loot table JSON and receive:\n"
+        "- Structural validation (errors & warnings)\n"
+        "- Rarity, category, and tag summaries\n"
+        "- Auto-correct preview (SAFE / AGGRESSIVE / STRICT)\n"
+        "- Optional SAFE auto-correction (non-destructive)\n\n"
+        "This endpoint NEVER modifies the stored loot table."
+    ),
 )
 def balance_test_import(req: ImportTestRequest):
-    report = validate_loot_table(req.loot_table)
+    # --------------------------------------------------
+    # 1. Run validation
+    # --------------------------------------------------
+    validation_result = validate_loot_table(req.loot_table)
 
-    report["name"] = req.name or "imported_loot_table"
-    report["engine_version"] = "3.0.0"
+    # --------------------------------------------------
+    # 2. Generate auto-correct preview (non-destructive)
+    # --------------------------------------------------
+    preview = generate_autocorrect_preview(
+        loot_table=req.loot_table,
+        validation_result=validation_result,
+        profile=req.auto_correct_profile or "safe",
+    )
+    
+    capabilities = get_profile_capabilities(preview["profile"])
+    diff_only = build_autocorrect_diff(preview)
 
-    return report
+    # --------------------------------------------------
+    # 3. Optionally apply SAFE auto-corrections
+    # --------------------------------------------------
+    safe_apply_result = None
+
+    if req.apply_safe_fixes:
+        if preview["profile"] != "safe":
+            # Guardrail: SAFE apply only
+            safe_apply_result = {
+                "applied": False,
+                "reason": "Only SAFE profile can be applied automatically."
+            }
+        else:
+            safe_apply_result ={
+                "applied": True,
+                "corrected_loot_table": apply_autocorrect(
+                    loot_table=req.loot_table,
+                    preview=preview
+                )
+            }
+    # --------------------------------------------------
+    # 4. Assemble response
+    # --------------------------------------------------
+    return {
+        "name": req.name or "imported_loot_table",
+        "valid": validation_result["valid"],
+        "errors": validation_result["errors"],
+        "warnings": validation_result["warnings"],
+        "summary": validation_result["summary"],
+        "compatibility": validation_result.get("compatibility", {}),
+        "auto_correct_preview": preview,
+        "auto_correct_diff": diff_only,
+        "profile_capabilities": capabilities,
+        "safe_auto_correct": {
+            "requested": req.apply_safe_fixes,
+            "applied": safe_apply_result is not None 
+                        and safe_apply_result.get("applied_fix_count", 0) > 0,
+            "result": safe_apply_result,
+        },
+    }
 
 #=============================================================================================
 # Balance Suggestions
@@ -1050,4 +1108,60 @@ def export_full(req: ExportRequest):
         "success": True,
         "updated_loot_table": new_table
     }
+
+#======================================================================
+# Export Corrected
+#======================================================================
+
+@app.post(
+    "/balance/export/corrected",
+    tags=["Balance Tools"],
+    summary="Exports corrected loot table using auto-correct profiles",
+    description=(
+        "Validate and auto-correct a custom loot table, then export a corrected JSON.\n\n"
+        "Profiles:\n"
+        "- SAFE: minimal fixes only (free)\n"
+        "- STRICT: no corrections, validation only\n"
+        "- AGGRESSIVE: advanced balancing (paid)"
+    ),
+)
+def export_corrected_loot_table(req: ExportcorrectRequest):
+    # 1. Validate first
+    validation = validate_loot_table(req.loot_table)
     
+    if not validation["valid"] and req.auto_correct_profile == "strict":
+        raise HTTPException(
+            status_code=400,
+            detail="STRICT profile does not allow exporting invalid loot tables."
+        )
+    
+    if req.auto_correct_profile != "safe":
+        raise HTTPException(
+            status_code=403,
+            detail="Only SAFE auto-correct profile can be applied automatically."
+        )
+        
+    # 2. Apply auto-correct
+    try:
+        preview = generate_autocorrect_preview(
+            loot_table=req.loot_table,
+            validation_result=validation,
+            profile=req.auto_correct_profile,
+        )
+        
+        corrected = apply_autocorrect(
+            loot_table=req.loot_table,
+            preview=preview,
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    
+    # 3. Return export
+    return {
+        "name": req.name or "corrected_loot_table",
+        "profile": req.auto_correct_profile,
+        "valid": validation["valid"],
+        "warnings": validation["warnings"],
+        "exported_loot_table": corrected,
+    }
