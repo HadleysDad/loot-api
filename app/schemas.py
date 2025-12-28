@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 # -----------------------------
@@ -231,6 +231,8 @@ class ImportTestRequest(BaseModel):
         default="Imported_Table",
         description="Optional label for the table being tested."
     )
+    auto_correct_profile: str | None = "none"
+    apply_safe_fixes: bool = False
 
     model_config = {
         "json_schema_extra": {
@@ -257,3 +259,24 @@ class ImportTestRequest(BaseModel):
             ]
         }
     }
+
+class AutoCorrectProfile(str, Enum):
+    safe = "safe"
+    aggressive = "aggressive"
+    strict = "strict"
+
+class ExportcorrectRequest(BaseModel):
+    name: Optional[str] = Field(
+        default=None,
+        description="Optional name for the exported loot table"
+    )
+    
+    loot_table: Dict[str, Any] = Field(
+        ...,
+        description="Custom loot table JSON to validate and correct"
+    )
+    
+    auto_correct_profile: AutoCorrectProfile = Field(
+        default=AutoCorrectProfile.safe,
+        description="Auto-correct behavior profile"
+    )
