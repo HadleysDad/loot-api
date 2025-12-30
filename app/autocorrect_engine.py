@@ -111,7 +111,108 @@ def generate_autocorrect_preview(
                 "action": "Normalize item.rarity to container rarity",
                 "severity": "aggressive",
             })
+    
+    #---------------------------------------------------
+    # AGGRESSIVE Missing rarity tiers
+    #---------------------------------------------------
+    
+    expected_rarities = {"Common", "Uncommon", "Rare", "Epic", "Legendary"}
 
+    for category_name, category in loot_table.items():
+        if not isinstance(category, dict):
+            continue
+
+        for item_type_name, type_block in category.items():
+            if not isinstance(type_block, dict):
+                continue
+
+            existing_rarities = set(type_block.keys())
+            missing_rarities = expected_rarities - existing_rarities
+
+            if missing_rarities:
+                fixes.append({
+                    "path": f"$.{category_name}.{item_type_name}",
+                    "issue": f"Missing rarity tiers: {sorted(missing_rarities)}",
+                    "before": sorted(existing_rarities),
+                    "after": sorted(expected_rarities),
+                    "action": "Add empty rarity lists for consistency",
+                    "severity": "aggressive",
+                })
+    
+    #---------------------------------------------------
+    # AGGRESSIVE: Weight outliers within rarity
+    #---------------------------------------------------
+    
+    rarity_weight_totals = {}
+    rarity_item_counts = {}
+    
+    for category in loot_table.values():
+        for type_block in category.values():
+            for rarity, items in type_block.items():
+                for item in items:
+                    weight = item.get("drop", {}).get("weight")
+                    if isinstance(weight, int):
+                        rarity_weight_totals[rarity] = (
+                            rarity_weight_totals.get(rarity, 0) + weight
+                        )
+                        rarity_item_counts[rarity] = (
+                            rarity_item_counts.get(rarity, 0) + 1
+                        )
+    
+    rarity_avg_weight = {
+        r: rarity_weight_totals[r] / rarity_item_counts[r]
+        for r in rarity_weight_totals
+        if rarity_item_counts[r] > 0
+    }
+    
+    for category_name, category in loot_table.items():
+        for item_type_name, type_block in category.items():
+            for rarity, items in type_block.items():
+                avg = rarity_avg_weight.get(rarity)
+                if not avg:
+                    continue
+                
+                for idx, item in enumerate(items):
+                    weight = item.get("drop", {}).get("weight")
+                    if isinstance(weight, int) and weight > avg * 5:
+                        fixes.append({
+                            "path": f"$.{category_name}.{item_type_name}.{rarity}[{idx}].drop.weight",
+                            "issue": "Weight is extreme outlier within rarity tier",
+                            "before": weight,
+                            "after": int(avg * 2),
+                            "action": "Cap weight relative to rarity average",
+                            "severity": "aggressive",
+                        })
+    
+    #---------------------------------------------------
+    # AGGRESSIVE: Rarity curve imbalance
+    #---------------------------------------------------
+    
+    expected_curve = {
+        "common": 70,
+        "Uncommon": 20,
+        "Rare": 7,
+        "Epic": 2.5,
+        "Legendary": 0.5,
+    }
+    
+    rarity_counts = validation_result.get("summary", {}).get("rarity_counts", {})
+    total_items = sum(rarity_counts.values()) or 1
+    
+    for rarity, expected_pct in expected_curve.items():
+        actual_pct = (rarity_counts.get(rarity, 0) / total_items) * 100
+        drift = round(actual_pct - expected_pct, 2)
+        
+        if abs(drift) >= 5:
+            fixes.append({
+                "path": "$",
+                "issue": f"{rarity} rarity deviates from expected curve by {drift}%",
+                "before": round(actual_pct, 2),
+                "after": expected_pct,
+                "action": "Rebalance global rarity distributions",
+                "severity": "aggressive",
+            })
+ 
     # --------------------------------------------------
     # STRICT fixes (preview only)
     # --------------------------------------------------
