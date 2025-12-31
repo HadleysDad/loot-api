@@ -185,6 +185,117 @@ def generate_autocorrect_preview(
                         })
     
     #---------------------------------------------------
+    # AGGRESSIVE: Weight outliers within same rarity
+    #---------------------------------------------------
+    for category_name, category in loot_table.items():
+        if not isinstance(category, dict):
+            continue
+            
+        for item_type_name, type_block in category.items():
+            if not isinstance(type_block, dict):
+                continue
+            
+            for rarity, items in type_block.items():
+                if not isinstance(items, list) or len(items) < 3:
+                    continue
+                
+                weights = [
+                    item.get("drop", {}).get("weight")
+                    for item in items
+                    if isinstance(item.get("drop", {}).get("weight"), int)
+                ]
+                
+                if len(weights) < 3:
+                    continue
+                
+                weights_sorted = sorted(weights)
+                median = weights_sorted[len(weights_sorted) // 2]
+                
+                if median <= 0:
+                    continue
+                
+                for idx, item in enumerate(items):
+                    weight = item.get("drop", {}).get("weight")
+                    if not isinstance(weight, int):
+                        continue
+                    
+                    if weight > median * 5 or weight < median / 5:
+                        fixes.append({
+                            "path": f"$.{category_name}.{item_type_name}.{rarity}{idx}.drop.weight",
+                            "issue": "Weight outlier within same rarity",
+                            "before": weight,
+                            "after": f"≈ {median}",
+                            "action": "Normalize weight toward median",
+                            "severity": "aggressive",
+                        })
+    
+    #---------------------------------------------------
+    # AGGRESSIVE: Stat scaling violations across rarities
+    #---------------------------------------------------
+    
+    rarity_order = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+    stat_totals = {r: {} for r in rarity_order}
+    stat_counts = {r: 0 for r in rarity_order}
+    
+    for category in loot_table.values():
+        if not isinstance(category, dict):
+            continue
+        
+        for type_block in category.values():
+            if not isinstance(type_block, dict):
+                continue
+            
+            for rarity, items in type_block.items():
+                if rarity not in rarity_order:
+                    continue
+                
+                for rarity, items in type_block.items():
+                    if rarity not in rarity_order:
+                        continue
+                    
+                    for item in items:
+                        stats = item.get("stats")
+                        if not isinstance(stats, dict):
+                            continue
+                        
+                        stat_counts[rarity] += 1
+                        for stat, val in stats.items():
+                            if isinstance(val, (int, float)):
+                                stat_totals[rarity][stat] = (
+                                    stat_totals[rarity].get(stat, 0) + val
+                                )
+    
+    stat_avgs = {}
+    for rarity in rarity_order:
+        if stat_counts[rarity] == 0:
+            continue
+        
+        stat_avgs[rarity] = {
+            stat: total / stat_counts[rarity]
+            for stat, total in stat_totals[rarity].items()
+        }
+        
+    for stat in set().union(*[v.keys() for v in stat_avgs.values()]):
+        last_val = None
+        for rarity in rarity_order:
+            val = stat_avgs.get(rarity, {}).get(stat)
+            if val is None:
+                continue
+            
+            if last_val is not None and val < last_val:
+                fixes.append({
+                    "path": "$",
+                    "issue": f"Stat '{stat}' decreases from previous rarity tier",
+                    "before": "Non-monotonic scaling",
+                    "after": "Strictly increasing by rarity",
+                    "action": f"Adjust {stat} scaling across rarities",
+                    "severity": "aggressive",
+                })
+                break
+            
+            last_val = val
+    
+    #---------------------------------------------------
     # AGGRESSIVE: Rarity curve imbalance
     #---------------------------------------------------
     
@@ -212,6 +323,36 @@ def generate_autocorrect_preview(
                 "action": "Rebalance global rarity distributions",
                 "severity": "aggressive",
             })
+    
+    # --------------------------------------------------
+    # AGGRESSIVE: Tag over-concentration
+    # --------------------------------------------------
+    
+    tag_counts = {}
+    total_items = 0
+    
+    for category in loot_table.values():
+        for type_block in category.values():
+            for items in type_block.values():
+                for item in items:
+                    total_items += 1
+                    for tag in item.get("tags", []):
+                        if isinstance(tag, str):
+                            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    
+    if total_items > 0:
+        for tag, count in tag_counts.items():
+            pct = count / total_items
+            if pct > 0.4:
+                fixes.append({
+                    "path": "$",
+                    "issue": f"Tag '{tag}' appears in {pct:.0%} of items",
+                    "before": f"{pct:.0%}",
+                    "after": "<= 40%",
+                    "action": "Reduce tag concentration or diversify items",
+                    "severity": "aggressive",
+                })
+            
  
     # --------------------------------------------------
     # STRICT fixes (preview only)
