@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 
 # -----------------------------
@@ -222,41 +222,81 @@ class ExportRequest(BaseModel):
 
 
 class ImportTestRequest(BaseModel):
-    loot_table: dict = Field(
-        ...,
-        description="Custom loot table JSON to validate. Use the same structure as the main API loot table."
-    )
+    """
+    Request body for validating and previewing auto-corrections
+    on a custom loot table JSON.
+    """
 
     name: Optional[str] = Field(
         default="Imported_Table",
-        description="Optional label for the table being tested."
+        description="Optional display name for the imported loot table."
     )
-    auto_correct_profile: str | None = "none"
-    apply_safe_fixes: bool = False
+
+    auto_correct_profile: Optional[Literal["safe", "aggressive", "strict"]] = Field(
+        default="safe",
+        description=(
+            "Auto-correct profile to use for preview:\n"
+            "- safe: non-destructive fixes only (free)\n"
+            "- aggressive: balance & progression diagnostics (preview-only)\n"
+            "- strict: CI-grade validation, no fixes"
+        )
+    )
+
+    apply_safe_fixes: Optional[bool] = Field(
+        default=False,
+        description=(
+            "If true, applies SAFE auto-corrections to a copy of the loot table.\n"
+            "Only valid when auto_correct_profile='safe'."
+        )
+    )
+
+    loot_table: Dict[str, Any] = Field(
+        ...,
+        description="Custom loot table JSON to validate. Must follow the same structure as /schema."
+    )
 
     model_config = {
         "json_schema_extra": {
-            "examples": [
-                {
-                    "name": "Imported_Table",
-                    "loot_table": {
-                        "Weapons": {
-                            "Sword_1H": {
-                                "Common": [
-                                    {
-                                        "name": "Rusty Sword",
-                                        "rarity": "Common",
-                                        "type": "weapon_sword_1h",
-                                        "tags": ["melee", "physical"],
-                                        "stats": {"attack": 5},
-                                        "drop": {"weight": 100}
+            "example": {
+                "name": "Imported_Table",
+                "auto_correct_profile": "aggressive",
+                "apply_safe_fixes": False,
+                "loot_table": {
+                    "Weapons": {
+                        "Sword_1H": {
+                            "Common": [
+                                {
+                                    "name": "Rusty Sword",
+                                    "rarity": "Common",
+                                    "type": "weapon_sword_1h",
+                                    "tags": ["melee", "physical"],
+                                    "stats": {
+                                        "attack": 5
+                                    },
+                                    "drop": {
+                                        "weight": 100
                                     }
-                                ]
-                            }
+                                }
+                            ],
+                            "Rare": [
+                                {
+                                    "name": "Knight Blade",
+                                    "rarity": "Rare",
+                                    "type": "weapon_sword_1h",
+                                    "tags": ["melee", "physical"],
+                                    "stats": {
+                                        "attack": 18,
+                                        "crit_chance": 3
+                                    },
+                                    "drop": {
+                                        "weight": 15
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
-            ]
+            }
         }
     }
 
